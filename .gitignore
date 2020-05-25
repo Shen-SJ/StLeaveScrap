@@ -6,4 +6,5 @@ chromedriver
 *.csv
 *.json
 *.xlsx
+*.txt
 list_data

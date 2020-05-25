@@ -107,16 +107,18 @@ class StLeaveScrap:
         self.post_data["__SCROLLPOSITIONX"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONX"]/@value')[0]
         self.post_data["__SCROLLPOSITIONY"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONY"]/@value')[0]
         self.post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
+
         self.post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = \
         selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_startDateTextBox"]/@value')[0]
         self.post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = \
         selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_endDateTextBox"]/@value')[0]
+        # 頁面中的隱藏參數，一筆資料會有一個隱藏參數，一頁會有十筆資料，因此會有10個隱藏參數
         for i, j in itertools.product([str(num).zfill(2) for num in range(2, 12)], ['1', '2']):
             self.post_data[f"ctl00$ContentPlaceHolder1$GVapprovedList$ctl{i}$HiddenField{j}"] = selector_eventval.xpath(
                 rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl{i}_HiddenField{j}"]/@value')[0]
+        # 連你那頁的頁面選擇單的值也要傳過去...
         self.post_data["ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList"] = selector_eventval.xpath(
-            r'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl13_PageDropDownList"]//option[@selected="selected"]/@value')[
-            0]
+            r'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl13_PageDropDownList"]//option[@selected="selected"]/@value')[0]
 
         return self.post_data
 
