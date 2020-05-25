@@ -18,19 +18,20 @@ password = input("請輸入密碼：")
 # 輸入查詢日期
 startdate = pd.Timestamp((prs.parse(input('請輸入查詢起始日期:')).date()))
 enddate = pd.Timestamp((prs.parse(input('請輸入查詢結束日期:')).date())) + pd.Timedelta(days=1)
+# TODO: 任意格式的時間轉換成特定時間
 
 
 class StLeaveScrap:
     # 網址
     pre_url = r'https://my.ntu.edu.tw/stuLeaveManagement/login.aspx?firstpage=teacher'
     login_url = r'https://web2.cc.ntu.edu.tw/p/s/login2/p1.php'
-    search_url = r'https://my.ntu.edu.tw/stuLeaveManagement/SignList_teacher.aspx'
+    search_url = r'https://my.ntu.edu.tw/stuLeaveManagement/QforTeacher_teacher.aspx'
 
     # 表頭
     nor_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:72.0) Gecko/20100101 Firefox/72.0',
                    'Connection': 'keep-alive'
                    }
-    post_headers = {
+    search_headers = {
         'User-Agent': r'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
         'Accept': r'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
@@ -49,7 +50,7 @@ class StLeaveScrap:
     }
 
     # 表單
-    post_data = {
+    search_post_data = {
         "ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField": ";;AjaxControlToolkit, Version=1.0.10618.0, Culture=neutral, PublicKeyToken=28f01b0e84b6d53e:zh-TW:bc82895f-eb24-48f8-a8ba-a354eb9c74da:e2e86ef9:a9a7729d:9ea3f0e2:9e8e87e9:1df13a87:4c9865be:ba594826:507fcf1b:c7a4182e",
         "__EVENTTARGET": "ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$lbtnNext",
         "__EVENTARGUMENT": "",
@@ -86,6 +87,9 @@ class StLeaveScrap:
         "ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList": "第2頁"
     }
 
+    # 會用到的參數
+    courses_dict = None      # 有哪些課要抓
+
     def __init__(self, account, pas, startdate=None, enddate=None): # TODO: 可以指定開始日與結束日
         # 登入用的帳密字典
         self.login_data = {'user': account,
@@ -99,36 +103,41 @@ class StLeaveScrap:
         self.startdate = startdate
         self.enddate = enddate
 
-    def get_post_data(self, web_text):
+    def get_search_post_data(self, web_text):
         ## 搞定 aspx 的三個動態驗證參數，把參數送到查詢表單裡
         selector_eventval = etree.HTML(web_text)
-        self.post_data["__VIEWSTATE"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATE"]/@value')[0]
-        self.post_data["__VIEWSTATEGENERATOR"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]
-        self.post_data["__SCROLLPOSITIONX"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONX"]/@value')[0]
-        self.post_data["__SCROLLPOSITIONY"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONY"]/@value')[0]
-        self.post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
+        self.search_post_data["__VIEWSTATE"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATE"]/@value')[0]
+        self.search_post_data["__VIEWSTATEGENERATOR"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]
+        self.search_post_data["__SCROLLPOSITIONX"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONX"]/@value')[0]
+        self.search_post_data["__SCROLLPOSITIONY"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONY"]/@value')[0]
+        self.search_post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
 
-        self.post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = \
+        self.search_post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = \
         selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_startDateTextBox"]/@value')[0]
-        self.post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = \
+        self.search_post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = \
         selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_endDateTextBox"]/@value')[0]
         # 頁面中的隱藏參數，一筆資料會有一個隱藏參數，一頁會有十筆資料，因此會有10個隱藏參數
         for i, j in itertools.product([str(num).zfill(2) for num in range(2, 12)], ['1', '2']):
-            self.post_data[f"ctl00$ContentPlaceHolder1$GVapprovedList$ctl{i}$HiddenField{j}"] = selector_eventval.xpath(
+            self.search_post_data[f"ctl00$ContentPlaceHolder1$GVapprovedList$ctl{i}$HiddenField{j}"] = selector_eventval.xpath(
                 rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl{i}_HiddenField{j}"]/@value')[0]
         # 連你那頁的頁面選擇單的值也要傳過去...
-        self.post_data["ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList"] = selector_eventval.xpath(
+        self.search_post_data["ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList"] = selector_eventval.xpath(
             r'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl13_PageDropDownList"]//option[@selected="selected"]/@value')[0]
 
-        return self.post_data
+        return self.search_post_data
 
     def get_post_heads(self):
         # 因為data內容改變，長度可能改變，要更新表頭資訊
-        self.post_headers['Content-Length'] = str(len(parse.urlencode(self.post_data)))
+        self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
-        return self.post_headers
+        return self.search_headers
 
     def login(self):
+        """
+        登入學生請假系統
+
+        :return: HTML for login web.
+        """
         # 先開啟起始網頁取得初始cookies取得權限
         pre_web = self.rs.get(self.pre_url,
                               headers=self.nor_headers)
@@ -142,12 +151,33 @@ class StLeaveScrap:
         remove_cookie_by_name(self.rs.cookies, 'PHPSESSID')  # 不知道 cookie 多了不必要的PHPSESSID會不會怎樣，先刪除好了
 
         # 檢查登入有沒有失敗
-        if login_web.url != self.search_url:
+        if login_web.url != r'https://my.ntu.edu.tw/stuLeaveManagement/SignList_teacher.aspx':
             raise LoginError('登入失敗!!!')
 
         return login_web
 
+    def get_course_dict(self, web_text):
+        """
+        取得需要抓取地所以課程名稱與其編號
+
+        :param web_text: 資料來源網頁內容
+        :return: 有課程資訊與其值的字典
+        """
+        courses_dict = {}
+        selector_eventval = etree.HTML(web_text)
+        data = selector_eventval.xpath(r'//*[@name="ctl00$ContentPlaceHolder1$DDLcourse"]//option')
+        for ele in data:
+            courses_dict[ele.text] = ele.attrib['value']
+
+        return courses_dict
+
     def scrap_data(self, web_text):
+        """
+        將 web_text 中所需表格抓下來變成 dataframe
+
+        :param web_text:
+        :return:
+        """
         selector_eventval = etree.HTML(web_text)
         data = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/td[position()<last() and position()>1]/text()')
         data = np.asarray(data).reshape((-1, 8))
@@ -170,45 +200,54 @@ class StLeaveScrap:
         return table_head
 
     def scrapping(self):
-        # 先登入
-        login_web = self.login()
+        # 先登入學生請假系統
+        self.login()    # 已取得登入cookies
 
-        # 下面就是開始抓資料了
-        df = self.scrap_data(login_web.text)
-        df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+        # 進入 QforTeacher 頁面
+        search_web = self.rs.get(self.search_url,
+                                 headers=self.nor_headers)
 
-        df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
+        # 先確定有幾個課程要抓
+        self.courses_dict = self.get_course_dict(search_web.text)
 
-        # 看看第二頁的內容 ((第一頁在上面登錄完後出現
-        self.get_post_data(login_web.text)
-        self.get_post_heads()
+        return
 
-        while True:
-            origin_size = df.size
-            # 取得更新後的頁面
-            time.sleep(3)
-            results = self.rs.post(self.search_url,
-                                   headers=self.post_headers,
-                                   data=self.post_data)
-            results_cookies = requests.utils.dict_from_cookiejar(self.rs.cookies)
-
-            # 萃取出所需的資料後變成 df
-            df = pd.concat([df, self.scrap_data(results.text)], axis='index', ignore_index=True)
-            df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
-
-            df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
-
-            # 如果增加資料後的大小跟沒增加前一樣(但不是沒資料)，代表資料以抓完畢
-            if df.size == origin_size and df.size != 0:
-                break
-
-            # 更新取得下頁資料所需的參數
-            self.get_post_data(results.text)
-            self.get_post_heads()
-
-        df = self.filter_by_confirm(df)     # 只保存核准過的資料
-
-        return results, results_cookies, df
+        # # 下面就是開始抓資料了
+        # df = self.scrap_data(login_web.text)
+        # df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+        #
+        # df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
+        #
+        # # 看看第二頁的內容 ((第一頁在上面登錄完後出現
+        # self.get_search_post_data(login_web.text)
+        # self.get_post_heads()
+        #
+        # while True:
+        #     origin_size = df.size
+        #     # 取得更新後的頁面
+        #     time.sleep(3)
+        #     results = self.rs.post(self.search_url,
+        #                            headers=self.search_headers,
+        #                            data=self.search_post_data)
+        #     results_cookies = requests.utils.dict_from_cookiejar(self.rs.cookies)
+        #
+        #     # 萃取出所需的資料後變成 df
+        #     df = pd.concat([df, self.scrap_data(results.text)], axis='index', ignore_index=True)
+        #     df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+        #
+        #     df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
+        #
+        #     # 如果增加資料後的大小跟沒增加前一樣(但不是沒資料)，代表資料以抓完畢
+        #     if df.size == origin_size and df.size != 0:
+        #         break
+        #
+        #     # 更新取得下頁資料所需的參數
+        #     self.get_search_post_data(results.text)
+        #     self.get_post_heads()
+        #
+        # df = self.filter_by_confirm(df)     # 只保存核准過的資料
+        #
+        # return results, results_cookies, df
 
 
 class LoginError(Exception):
@@ -219,6 +258,7 @@ class LoginError(Exception):
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    r, r_cookie, df = s.scrapping()
+    # r, r_cookie, df = s.scrapping()
+    s.scrapping()
 
     pass

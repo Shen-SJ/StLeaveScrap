@@ -171,11 +171,11 @@ if __name__ == "__main__":
     hide_pa = search_selector.xpath(r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$HiddenField1")]')
     if len(hide_pa) > 10:
         raise Exception('不應該超過10個!!')
-    for ele in hide_pa:
+    for ele in hide_pa:     # 隱藏的那十個參數
         search_data_copy[ele.attrib['name']] = ele.attrib['value']
     search_data_copy['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = search_selector.xpath(
-        r'//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option[@selected="selected"]/@value')[0]
-    del search_data_copy['ctl00$ContentPlaceHolder1$Button1']
+        r'//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option[@selected="selected"]/@value')[0]    # 選重的頁面
+    del search_data_copy['ctl00$ContentPlaceHolder1$Button1']       # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
 
     # 因為data內容改變，長度可能改變，要更新表頭資訊
     search_headers['Content-Length'] = str(len(parse.urlencode(search_data_copy)))
