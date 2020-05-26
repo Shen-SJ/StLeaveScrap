@@ -86,7 +86,15 @@ class StLeaveScrap:
         "ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList": "第2頁"
     }
 
-    def __init__(self, account, pas, startdate=None, enddate=None): # TODO: 可以指定開始日與結束日
+    def __init__(self, account, pas, startdate=None, enddate=None):
+        """
+        一個可以抓取學生請假紀錄的類別，包含了網頁 post 方法、資料抓取方法、資料過濾方法等。
+
+        :param account: 登入的帳號
+        :param pas: 登入的密碼
+        :param startdate: 資料的起始日期
+        :param enddate: 資料的結束日期
+        """
         # 登入用的帳密字典
         self.login_data = {'user': account,
                            'pass': pas,
@@ -96,6 +104,7 @@ class StLeaveScrap:
         # 建立一個爬蟲的物件
         self.rs = requests.Session()
 
+        # 輸入起始日期與結束日期
         self.startdate = startdate
         self.enddate = enddate
 
@@ -104,29 +113,38 @@ class StLeaveScrap:
         selector_eventval = etree.HTML(web_text)
         self.post_data["__VIEWSTATE"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATE"]/@value')[0]
         self.post_data["__VIEWSTATEGENERATOR"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]
+        self.post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
         self.post_data["__SCROLLPOSITIONX"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONX"]/@value')[0]
         self.post_data["__SCROLLPOSITIONY"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONY"]/@value')[0]
-        self.post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
         self.post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = \
-        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_startDateTextBox"]/@value')[0]
+        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_startDateTextBox"]/@value')[0] # 網頁中顯示的起始日期
         self.post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = \
-        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_endDateTextBox"]/@value')[0]
-        for i, j in itertools.product([str(num).zfill(2) for num in range(2, 12)], ['1', '2']):
+        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_endDateTextBox"]/@value')[0]   # 網頁中顯示的結束日期
+        for i, j in itertools.product([str(num).zfill(2) for num in range(2, 12)], ['1', '2']):     # 網頁中每 row 中的隱藏參數
             self.post_data[f"ctl00$ContentPlaceHolder1$GVapprovedList$ctl{i}$HiddenField{j}"] = selector_eventval.xpath(
                 rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl{i}_HiddenField{j}"]/@value')[0]
         self.post_data["ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList"] = selector_eventval.xpath(
             r'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl13_PageDropDownList"]//option[@selected="selected"]/@value')[
-            0]
+            0]      # 網頁中顯示的你選中頁面是第幾頁
 
         return self.post_data
 
     def get_post_heads(self):
-        # 因為data內容改變，長度可能改變，要更新表頭資訊
+        """
+        更新 headers 的 'Content-Length'，因 data form 資料改變造成封包長度改變。
+
+        :return: 改變過的 headers
+        """
         self.post_headers['Content-Length'] = str(len(parse.urlencode(self.post_data)))
 
         return self.post_headers
 
     def login(self):
+        """
+        輸入帳號密碼登入學生請假紀錄系統。
+
+        :return: 登入後的網頁 respond 物件。
+        """
         # 先開啟起始網頁取得初始cookies取得權限
         pre_web = self.rs.get(self.pre_url,
                               headers=self.nor_headers)
@@ -145,29 +163,60 @@ class StLeaveScrap:
 
         return login_web
 
-    def scrap_data(self, web_text):
+    def get_table_head(self, web_text):
+        """
+        取得網頁中表格的欄位名稱。
+
+        :param web_text: 字串格式的網頁內容。
+        :return: 表格欄位名稱
+        """
         selector_eventval = etree.HTML(web_text)
+        # 取得欄位名稱
+        table_head = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/th[position()>1 and position()<last()]/text()')
+        return table_head
+
+    def scrap_data(self, web_text):
+        """
+        抓取網頁頁面中的表格內容。
+
+        :param web_text: 字串格式的網頁內容。
+        :return: dataframe.
+        """
+        selector_eventval = etree.HTML(web_text)
+
+        # 鎖定表格在網頁內容中的位置並抓取
         data = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/td[position()<last() and position()>1]/text()')
-        data = np.asarray(data).reshape((-1, 8))
+        data = np.asarray(data).reshape((-1, 8))    # 因為抓取下來是 1D 資料，轉換成網頁中 2D 形式
         df = pd.DataFrame(data, columns=self.get_table_head(web_text))
         return df
 
     def filter_by_date(self, df):
+        """
+        以'簽核時間'過濾表格內容。
+
+        :param df: dataframe.
+        :return: 過濾過的 dataframe.
+        """
         df = df[df['簽核時間'] < self.enddate]
         df = df[df['簽核時間'] > self.startdate]
         return df
 
     def filter_by_confirm(self, df):
+        """
+        以''我的簽核'為'核准'過濾表格內容。
+
+        :param df: dataframe.
+        :return: 過濾過的 dataframe.
+        """
         df = df[df['我的簽核'] == '核准']
         return df
 
-    def get_table_head(self, web_text):
-        selector_eventval = etree.HTML(web_text)
-        # 先取得欄位名稱
-        table_head = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/th[position()>1 and position()<last()]/text()')
-        return table_head
-
     def scrapping(self):
+        """
+        整個爬蟲的過程，包括登入、切換頁面、抓取資料、過濾資料等等。
+
+        :return: results: 最後的網頁物件, results_cookies: 最後的網物物件 cookies, df: 抓下來的指定 dataframe.
+        """
         # 先登入
         login_web = self.login()
 
