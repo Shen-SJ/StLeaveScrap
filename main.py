@@ -1,36 +1,36 @@
 # 備忘錄
 # df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+# 從另外一個課程換到另外一個課程可以不用傳前一個課程的學生隱藏代碼呢
 
 import requests
 from requests.cookies import remove_cookie_by_name
 from lxml import etree
 from urllib import parse
-import itertools
 import pandas as pd
-import numpy as np
 import time
 import dateutil.parser as prs
+import copy
 
 # 登入用帳密
 username = input("請輸入賬號：")
 password = input("請輸入密碼：")
 
 # 輸入查詢日期
-startdate = pd.Timestamp((prs.parse(input('請輸入查詢起始日期:')).date()))
-enddate = pd.Timestamp((prs.parse(input('請輸入查詢結束日期:')).date())) + pd.Timedelta(days=1)
+startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
+enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
 
 
 class StLeaveScrap:
     # 網址
     pre_url = r'https://my.ntu.edu.tw/stuLeaveManagement/login.aspx?firstpage=teacher'
     login_url = r'https://web2.cc.ntu.edu.tw/p/s/login2/p1.php'
-    search_url = r'https://my.ntu.edu.tw/stuLeaveManagement/SignList_teacher.aspx'
+    search_url = r'https://my.ntu.edu.tw/stuLeaveManagement/QforTeacher_teacher.aspx'
 
     # 表頭
     nor_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:72.0) Gecko/20100101 Firefox/72.0',
                    'Connection': 'keep-alive'
                    }
-    post_headers = {
+    search_headers = {
         'User-Agent': r'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
         'Accept': r'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
         'Accept-Encoding': 'gzip, deflate, br',
@@ -49,42 +49,31 @@ class StLeaveScrap:
     }
 
     # 表單
-    post_data = {
+    search_post_data = {
         "ctl00_ContentPlaceHolder1_ScriptManager1_HiddenField": ";;AjaxControlToolkit, Version=1.0.10618.0, Culture=neutral, PublicKeyToken=28f01b0e84b6d53e:zh-TW:bc82895f-eb24-48f8-a8ba-a354eb9c74da:e2e86ef9:a9a7729d:9ea3f0e2:9e8e87e9:1df13a87:4c9865be:ba594826:507fcf1b:c7a4182e",
-        "__EVENTTARGET": "ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$lbtnNext",
+        "__EVENTTARGET": "",
         "__EVENTARGUMENT": "",
-        "__LASTFOCUS": "",
         "__VIEWSTATE": "/wEPDwULLTE4MDkxNjYwMjMPZBYCZg9kFgICAw9kFgICAQ9kFgwCAw8PZA8QFgFmFgEWAh4OUGFyYW1ldGVyVmFsdWVkFgECA2RkAgUPD2QPDxQrAAEWBh4ETmFtZQUIdGVhX2NvZGUeDERlZmF1bHRWYWx1ZQUGMDAzMDQ1HwBkFCsBAQIDZGQCBw8PZA8QFgFmFgEWAh8ABQUyNDY0MhYBAgVkZAIJDxAPFgQeC18hRGF0YUJvdW5kZx4HVmlzaWJsZWhkEBUBBjAwMzA0NRUBBjAwMzA0NRQrAwFnFgBkAg0PEA8WAh8DZ2QQFQJ65YWo5rCR5ZyL6Ziy5pWZ6IKy6LuN5LqL6KiT57e06Kqy56iL77yN5ZyL6Zqb5oOF5YuiIEFsbC1vdXQgRGVmZW5zZSBFZHVjYXRpb24gTWlsaXRhcnkgVHJhaW5pbmcgLSBJbnRlcm5hdGlvbmFsIFNpdHVhdGlvbnNz5YWo5rCR5ZyL6Ziy5pWZ6IKy6LuN5LqL6KiT57e06Kqy56iL77yN5ZyL6Ziy56eR5oqAIEFsbC1vdXQgRGVmZW5zZSBFZHVjYXRpb24gTWlsaXRhciBUcmFpbmluZyAtIERlZmVuc2UgVGVjaG5vbG9neRUCCTAwMyAxMDIyMAkwMDMgMTAyMzAUKwMCZ2dkZAIVDxAPFgIfA2dkEBUHBuWFqOmDqAvnl4XlgYcgc2ljaw/kuovlgYcgcGVyc29uYWwP5YWs5YGHIG9mZmljaWFsEOeUouWBhyBtYXRlcm5pdHkT55Sf55CG5YGHIG1lbnN0cnVhbA7llqrlgYcgZnVuZXJhbBUHAAEyATMBNAE1AjExATcUKwMHZ2dnZ2dnZ2RkGAEFJGN0bDAwJENvbnRlbnRQbGFjZUhvbGRlcjEkR1ZhbGxMZWF2ZQ88KwAKAQhmZGwahZ/QT02yJ69DM4ZODhYDYm63",
-        "__VIEWSTATEGENERATOR": "0C3B263D",
-        "__SCROLLPOSITIONX": "0",
-        "__SCROLLPOSITIONY": "213",
+        "__VIEWSTATEGENERATOR": "1C8E3960",
         "__EVENTVALIDATION": "/wEWHQKy88f5DAKy3qeGBwKy3pPdDwLRhuutCwLB6cHDBwLe6cHDBwLi0oa2DgLPurjaDwLB1ZK0AwLC1ZK0AwLD1ZK0AwLE1ZK0AwLA1d63AwLG1ZK0AwLwkuyECgLorf/gBQLQ3ZzYBQL2yrfJAQL8+Mu7DwKMt5/YBQKNuNfdBgLslbasCALgx48/AonJgv0PAo7Tk/8JAtmq8MUGAsPP7NsEAorA9PYHAoDiyWPNr+i1K3LavI0cS3R5YMrfU/OS5Q==",
-        "ctl00$ContentPlaceHolder1$DDLapplylist": "all",
-        "ctl00$ContentPlaceHolder1$commentTextBox": "",
-        "ctl00$ContentPlaceHolder1$startDateTextBox": "2020/02/08",
-        "ctl00$ContentPlaceHolder1$endDateTextBox": "2020/02/08",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl02$HiddenField1": "171700",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl02$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl03$HiddenField1": "171680",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl03$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl04$HiddenField1": "171679",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl04$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl05$HiddenField1": "171654",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl05$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl06$HiddenField1": "171579",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl06$HiddenField2": "003+10230",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl07$HiddenField1": "171577",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl07$HiddenField2": "003+10230",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl08$HiddenField1": "171574",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl08$HiddenField2": "003+10230",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl09$HiddenField1": "171466",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl09$HiddenField2": "003+10230",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl10$HiddenField1": "171431",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl10$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl11$HiddenField1": "171426",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl11$HiddenField2": "003+10220",
-        "ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList": "第2頁"
-    }
+        "ctl00$ContentPlaceHolder1$DDLcourse": "003 10220",
+        "ctl00$ContentPlaceHolder1$DDLisAbroad": "",
+        "ctl00$ContentPlaceHolder1$nameTextBox": "",
+        "ctl00$ContentPlaceHolder1$DDLLeaveType": "",
+        "ctl00$ContentPlaceHolder1$DDLstatus": "",
+        "ctl00$ContentPlaceHolder1$DDLformType": "",
+        "ctl00$ContentPlaceHolder1$startDateTextBox": r"2020/03/23",
+        "ctl00$ContentPlaceHolder1$endDateTextBox": r"2020/05/23",
+        "ctl00$ContentPlaceHolder1$Button1": "查詢"
+    }       # 可以送出第一次搜尋用
+
+    # 會用到的參數
+    courses_dict = None  # 有哪些課要抓
+    search_web = None  # QforTeacher 的網頁內容，會隨之更改
+    search_web_etree = None  # search_web 的 etree 版本， xpath 用
+
+    # 我抓到的資料
+    st_leave_data = None
 
     def __init__(self, account, pas, startdate=None, enddate=None):
         """
@@ -108,37 +97,6 @@ class StLeaveScrap:
         self.startdate = startdate
         self.enddate = enddate
 
-    def get_post_data(self, web_text):
-        ## 搞定 aspx 的三個動態驗證參數，把參數送到查詢表單裡
-        selector_eventval = etree.HTML(web_text)
-        self.post_data["__VIEWSTATE"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATE"]/@value')[0]
-        self.post_data["__VIEWSTATEGENERATOR"] = selector_eventval.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]
-        self.post_data["__EVENTVALIDATION"] = selector_eventval.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
-        self.post_data["__SCROLLPOSITIONX"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONX"]/@value')[0]
-        self.post_data["__SCROLLPOSITIONY"] = selector_eventval.xpath(r'//*[@id="__SCROLLPOSITIONY"]/@value')[0]
-        self.post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = \
-        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_startDateTextBox"]/@value')[0] # 網頁中顯示的起始日期
-        self.post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = \
-        selector_eventval.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_endDateTextBox"]/@value')[0]   # 網頁中顯示的結束日期
-        for i, j in itertools.product([str(num).zfill(2) for num in range(2, 12)], ['1', '2']):     # 網頁中每 row 中的隱藏參數
-            self.post_data[f"ctl00$ContentPlaceHolder1$GVapprovedList$ctl{i}$HiddenField{j}"] = selector_eventval.xpath(
-                rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl{i}_HiddenField{j}"]/@value')[0]
-        self.post_data["ctl00$ContentPlaceHolder1$GVapprovedList$ctl13$PageDropDownList"] = selector_eventval.xpath(
-            r'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList_ctl13_PageDropDownList"]//option[@selected="selected"]/@value')[
-            0]      # 網頁中顯示的你選中頁面是第幾頁
-
-        return self.post_data
-
-    def get_post_heads(self):
-        """
-        更新 headers 的 'Content-Length'，因 data form 資料改變造成封包長度改變。
-
-        :return: 改變過的 headers
-        """
-        self.post_headers['Content-Length'] = str(len(parse.urlencode(self.post_data)))
-
-        return self.post_headers
-
     def login(self):
         """
         輸入帳號密碼登入學生請假紀錄系統。
@@ -147,7 +105,8 @@ class StLeaveScrap:
         """
         # 先開啟起始網頁取得初始cookies取得權限
         pre_web = self.rs.get(self.pre_url,
-                              headers=self.nor_headers)
+                              headers=self.nor_headers,
+                              verify=False)     # 用 fiddler 驗證不會過，所以要關閉
         pre_cookies = requests.utils.dict_from_cookiejar(self.rs.cookies)
 
         # 登入學校系統
@@ -158,104 +117,145 @@ class StLeaveScrap:
         remove_cookie_by_name(self.rs.cookies, 'PHPSESSID')  # 不知道 cookie 多了不必要的PHPSESSID會不會怎樣，先刪除好了
 
         # 檢查登入有沒有失敗
-        if login_web.url != self.search_url:
+        if login_web.url != r'https://my.ntu.edu.tw/stuLeaveManagement/SignList_teacher.aspx':
             raise LoginError('登入失敗!!!')
 
         return login_web
 
-    def get_table_head(self, web_text):
+    def get_course_dict(self, web_text):
         """
-        取得網頁中表格的欄位名稱。
+        取得需要抓取的所有課程名稱與其編號
 
-        :param web_text: 字串格式的網頁內容。
-        :return: 表格欄位名稱
+        :param web_text: 資料來源網頁內容
+        :return: 有課程資訊與其值的字典
         """
+        courses_dict = {}
         selector_eventval = etree.HTML(web_text)
-        # 取得欄位名稱
-        table_head = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/th[position()>1 and position()<last()]/text()')
-        return table_head
+        data = selector_eventval.xpath(r'//*[@name="ctl00$ContentPlaceHolder1$DDLcourse"]//option')
+        for ele in data:
+            courses_dict[ele.attrib['value']] = ele.text
 
-    def scrap_data(self, web_text):
+        return courses_dict
+
+    def change_aspnet_arg(self):
         """
-        抓取網頁頁面中的表格內容。
+        變更三個必要的 asp.net 隱藏參數
 
-        :param web_text: 字串格式的網頁內容。
-        :return: dataframe.
+        :return: None
         """
-        selector_eventval = etree.HTML(web_text)
+        self.search_post_data["__VIEWSTATE"] = self.search_web_etree.xpath(r'//*[@id="__VIEWSTATE"]/@value')[0]
+        self.search_post_data["__EVENTVALIDATION"] = \
+            self.search_web_etree.xpath(r'//*[@id="__EVENTVALIDATION"]/@value')[0]
+        self.search_post_data["__VIEWSTATEGENERATOR"] = \
+            self.search_web_etree.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]  # 其實目前他不會變，但怕有萬一還是從頁面抓來
 
-        # 鎖定表格在網頁內容中的位置並抓取
-        data = selector_eventval.xpath(rf'//*[@id="ctl00_ContentPlaceHolder1_GVapprovedList"]/tr/td[position()<last() and position()>1]/text()')
-        data = np.asarray(data).reshape((-1, 8))    # 因為抓取下來是 1D 資料，轉換成網頁中 2D 形式
-        df = pd.DataFrame(data, columns=self.get_table_head(web_text))
-        return df
-
-    def filter_by_date(self, df):
+    def get_course_data(self, course_id):
         """
-        以'簽核時間'過濾表格內容。
+        取得指定課程的學生請假紀錄
 
-        :param df: dataframe.
-        :return: 過濾過的 dataframe.
+        :param course_id: 指定課程的代碼
+        :return: 學生請假紀錄 dataframe
         """
-        df = df[df['簽核時間'] < self.enddate]
-        df = df[df['簽核時間'] > self.startdate]
-        return df
+        # TODO: 這段感覺超級亂，之後有機會再改
+        # 把課程代碼 key-in 到 search_post_data
+        self.search_post_data["ctl00$ContentPlaceHolder1$DDLcourse"] = course_id
+        self.search_post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = self.startdate
+        self.search_post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = self.enddate
 
-    def filter_by_confirm(self, df):
-        """
-        以''我的簽核'為'核准'過濾表格內容。
+        ## 先取得第一頁吧
+        # 更改 search_headers
+        self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
-        :param df: dataframe.
-        :return: 過濾過的 dataframe.
-        """
-        df = df[df['我的簽核'] == '核准']
+        # 取得第一頁並抓取資料
+        time.sleep(0.5)     # 怕抓太快對伺服器造成負擔
+        self.search_web = self.rs.post(self.search_url,
+                                       headers=self.search_headers,
+                                       data=self.search_post_data)
+        self.search_web_etree = etree.HTML(self.search_web.text)
+        df = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+
+        # 算算這次你要抓幾頁，迴圈要跑幾次
+        total_pages = len(self.search_web_etree.xpath(
+            '//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option'))
+
+        # 把 search_post_data 備份，之後的變更不想應用到類別屬性
+        search_post_data_copy = copy.copy(self.search_post_data)
+
+        ## 取得第二頁之後的資料吧
+        for _ in range(0, total_pages-1):
+            # 更改 search_post_data
+            self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
+            self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
+            hide_pa = etree.HTML(self.search_web.text).xpath(
+                r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$HiddenField1")]')  # 取得隱藏參數
+            if len(hide_pa) > 10:
+                raise Exception('不應該超過10個!!')
+            for ele in hide_pa:  # 隱藏的那十個參數
+                self.search_post_data[ele.attrib['name']] = ele.attrib['value']
+            self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
+                etree.HTML(self.search_web.text).xpath(
+                    r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
+            if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
+                del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
+
+            # 更改 search_headers
+            self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+
+            # 得到第下筆資料
+            time.sleep(0.5)  # 怕抓太快對伺服器造成負擔
+            self.search_web = self.rs.post(self.search_url,
+                                           headers=self.search_headers,
+                                           data=self.search_post_data)
+            self.search_web_etree = etree.HTML(self.search_web.text)
+            # 萃取出所需的資料後變成 df
+            df = pd.concat([df, pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]], axis='index', ignore_index=True)
+
+        # 還原 search_post_data
+        self.search_post_data = search_post_data_copy
+        # 因為我這邊的概念很像是平行查詢，每個課程的查詢都是從最初、還沒有送出 post 前的那個 QforTeacher 頁面的 cookies 開始查詢，
+        # 如下圖:
+        #
+        #                       * : login to SignList_teacher
+        #                       |
+        #                       * : goto QforTeacher
+        #                      / \
+        #                     /   \
+        #     search 10230 : *     * : search 10220
+        #                    |     |
+        #  get the results : *     * : get the results
+        #
+
         return df
 
     def scrapping(self):
         """
-        整個爬蟲的過程，包括登入、切換頁面、抓取資料、過濾資料等等。
+        抓取該帳號內所有課程指定日期間學生請假紀錄。
 
-        :return: results: 最後的網頁物件, results_cookies: 最後的網物物件 cookies, df: 抓下來的指定 dataframe.
+        :return: a dataframe.
         """
-        # 先登入
-        login_web = self.login()
+        # 先登入學生請假系統
+        self.login()  # 已取得登入cookies
 
-        # 下面就是開始抓資料了
-        df = self.scrap_data(login_web.text)
-        df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+        # 進入 QforTeacher 頁面並存起來
+        self.search_web = self.rs.get(self.search_url,
+                                      headers=self.nor_headers)
+        self.search_web_etree = etree.HTML(self.search_web.text)
 
-        df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
+        # 更改 search_post_data
+        self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
 
-        # 看看第二頁的內容 ((第一頁在上面登錄完後出現
-        self.get_post_data(login_web.text)
-        self.get_post_heads()
+        # 更改 search_headers
+        self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
-        while True:
-            origin_size = df.size
-            # 取得更新後的頁面
-            time.sleep(3)
-            results = self.rs.post(self.search_url,
-                                   headers=self.post_headers,
-                                   data=self.post_data)
-            results_cookies = requests.utils.dict_from_cookiejar(self.rs.cookies)
+        # 先確定有幾個課程要抓以及取得課程名稱與代碼
+        self.courses_dict = self.get_course_dict(self.search_web.text)
 
-            # 萃取出所需的資料後變成 df
-            df = pd.concat([df, self.scrap_data(results.text)], axis='index', ignore_index=True)
-            df[['開始日', '結束日', '簽核時間']] = df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+        # 開始抓吧!!
+        self.st_leave_data = {}
+        for course_id in self.courses_dict.keys():
+            self.st_leave_data[self.courses_dict[course_id]] = self.get_course_data(course_id)
 
-            df = self.filter_by_date(df)    # 根據搜尋日期區間篩選資料
-
-            # 如果增加資料後的大小跟沒增加前一樣(但不是沒資料)，代表資料以抓完畢
-            if df.size == origin_size and df.size != 0:
-                break
-
-            # 更新取得下頁資料所需的參數
-            self.get_post_data(results.text)
-            self.get_post_heads()
-
-        df = self.filter_by_confirm(df)     # 只保存核准過的資料
-
-        return results, results_cookies, df
+        return self.st_leave_data
 
 
 class LoginError(Exception):
@@ -266,6 +266,6 @@ class LoginError(Exception):
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    r, r_cookie, df = s.scrapping()
+    df = s.scrapping()
 
     pass
