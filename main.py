@@ -227,6 +227,20 @@ class StLeaveScrap:
 
         return df
 
+    def export2excel(self):
+        """
+        將抓到的 st_leave_data 輸出成 excel. 不同課程會分別以不同 sheet 隔開。
+
+        :return: None.
+        """
+        # 我的檔名是啥
+        filename = f"StudentsLeaveRecord_{self.startdate.replace(r'/', '')}-{self.enddate.replace(r'/', '')}"
+
+        # pandas 要匯出多 sheets excel 要先創建一個 ExcelWriter 物件，然後在這樣寫進去
+        with pd.ExcelWriter(f'{filename}.xlsx') as writer:
+            for course_name in self.st_leave_data.keys():
+                self.st_leave_data[course_name].to_excel(writer, sheet_name=course_name)
+
     def scrapping(self):
         """
         抓取該帳號內所有課程指定日期間學生請假紀錄。
@@ -267,5 +281,6 @@ class LoginError(Exception):
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
     df = s.scrapping()
+    s.export2excel()
 
     pass
