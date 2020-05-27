@@ -1,13 +1,12 @@
 # 備忘錄
 # df[['開始日', '結束日', '簽核時間']].apply(pd.to_datetime)
+# 從另外一個課程換到另外一個課程可以不用傳前一個課程的學生隱藏代碼呢
 
 import requests
 from requests.cookies import remove_cookie_by_name
 from lxml import etree
 from urllib import parse
-import itertools
 import pandas as pd
-import numpy as np
 import time
 import dateutil.parser as prs
 import copy
@@ -17,13 +16,8 @@ username = input("請輸入賬號：")
 password = input("請輸入密碼：")
 
 # 輸入查詢日期
-# startdate = pd.Timestamp((prs.parse(input('請輸入查詢起始日期:')).date()))
-# enddate = pd.Timestamp((prs.parse(input('請輸入查詢結束日期:')).date())) + pd.Timedelta(days=1)
-startdate = '2020/03/23'
-enddate = '2020/05/23'
-
-
-# TODO: 任意格式的時間轉換成特定時間
+startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
+enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
 
 
 class StLeaveScrap:
@@ -81,7 +75,7 @@ class StLeaveScrap:
     # 我抓到的資料
     st_leave_data = None
 
-    def __init__(self, account, pas, startdate=None, enddate=None):  # TODO: 可以指定開始日與結束日
+    def __init__(self, account, pas, startdate=None, enddate=None):
         # 登入用的帳密字典
         self.login_data = {'user': account,
                            'pass': pas,
@@ -103,7 +97,7 @@ class StLeaveScrap:
         # 先開啟起始網頁取得初始cookies取得權限
         pre_web = self.rs.get(self.pre_url,
                               headers=self.nor_headers,
-                              verify=False)
+                              verify=False)     # 用 fiddler 驗證不會過，所以要關閉
         pre_cookies = requests.utils.dict_from_cookiejar(self.rs.cookies)
 
         # 登入學校系統
@@ -156,7 +150,8 @@ class StLeaveScrap:
         # TODO: 這段感覺超級亂，之後有機會再改
         # 把課程代碼 key-in 到 search_post_data
         self.search_post_data["ctl00$ContentPlaceHolder1$DDLcourse"] = course_id
-        # TODO: 以後日期也要 key-in 喔
+        self.search_post_data["ctl00$ContentPlaceHolder1$startDateTextBox"] = self.startdate
+        self.search_post_data["ctl00$ContentPlaceHolder1$endDateTextBox"] = self.enddate
 
         ## 先取得第一頁吧
         # 更改 search_headers
@@ -190,8 +185,7 @@ class StLeaveScrap:
                 self.search_post_data[ele.attrib['name']] = ele.attrib['value']
             self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
                 etree.HTML(self.search_web.text).xpath(
-                    r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[
-                    0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
+                    r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
             if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
                 del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
 
@@ -209,6 +203,18 @@ class StLeaveScrap:
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
+        # 因為我這邊的概念很像是平行查詢，每個課程的查詢都是從最初、還沒有送出 post 前的那個 QforTeacher 頁面的 cookies 開始查詢，
+        # 如下圖:
+        #
+        #                       * : login to SignList_teacher
+        #                       |
+        #                       * : goto QforTeacher
+        #                      / \
+        #                     /   \
+        #     search 10230 : *     * : search 10220
+        #                    |     |
+        #  get the results : *     * : get the results
+        #
 
         return df
 
@@ -251,9 +257,6 @@ class LoginError(Exception):
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    # r, r_cookie, df = s.scrapping()
     df = s.scrapping()
-
-    # 從另外一個課程換到另外一個課程可以不用傳前一個課程的學生隱藏代碼呢
 
     pass
