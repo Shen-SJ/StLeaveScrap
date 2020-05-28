@@ -3,6 +3,7 @@ __pycache__/
 chromedriver/
 .idea/
 logo
+testing_file
 
 # 忽略一些不想上傳的檔案
 *.csv

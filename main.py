@@ -181,12 +181,17 @@ class StLeaveScrap:
         self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
         # 取得第一頁並抓取資料
-        time.sleep(1)     # 怕抓太快對伺服器造成負擔
+        time.sleep(1)  # 怕抓太快對伺服器造成負擔
         self.search_web = self.rs.post(self.search_url,
                                        headers=self.search_headers,
                                        data=self.search_post_data)
         self.search_web_etree = etree.HTML(self.search_web.text)
-        df = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+
+        # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
+        if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
+            df = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
+        else:
+            df = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
 
         # 算算這次你要抓幾頁，迴圈要跑幾次
         total_pages = len(self.search_web_etree.xpath(
@@ -196,7 +201,7 @@ class StLeaveScrap:
         search_post_data_copy = copy.copy(self.search_post_data)
 
         ## 取得第二頁之後的資料吧
-        for _ in range(0, total_pages-1):
+        for _ in range(0, total_pages - 1):
             # 更改 search_post_data
             self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
             self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
@@ -222,7 +227,9 @@ class StLeaveScrap:
                                            data=self.search_post_data)
             self.search_web_etree = etree.HTML(self.search_web.text)
             # 萃取出所需的資料後變成 df
-            df = pd.concat([df, pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]], axis='index', ignore_index=True)
+            df = pd.concat([df, pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]],
+                           axis='index',
+                           ignore_index=True)
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
