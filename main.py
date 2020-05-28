@@ -10,6 +10,7 @@ import pandas as pd
 import time
 import dateutil.parser as prs
 import copy
+import re
 
 # 登入用帳密
 username = input("請輸入賬號：")
@@ -167,7 +168,7 @@ class StLeaveScrap:
         self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
         # 取得第一頁並抓取資料
-        time.sleep(0.5)     # 怕抓太快對伺服器造成負擔
+        time.sleep(1)     # 怕抓太快對伺服器造成負擔
         self.search_web = self.rs.post(self.search_url,
                                        headers=self.search_headers,
                                        data=self.search_post_data)
@@ -202,7 +203,7 @@ class StLeaveScrap:
             self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
             # 得到第下筆資料
-            time.sleep(0.5)  # 怕抓太快對伺服器造成負擔
+            time.sleep(1)  # 怕抓太快對伺服器造成負擔
             self.search_web = self.rs.post(self.search_url,
                                            headers=self.search_headers,
                                            data=self.search_post_data)
@@ -226,6 +227,26 @@ class StLeaveScrap:
         #
 
         return df
+
+    def export2excel(self):
+        """
+        將抓到的 st_leave_data 輸出成 excel. 不同課程會分別以不同 sheet 隔開。
+
+        :return: None.
+        """
+        # 我的檔名是啥
+        filename = f"StudentsLeaveRecord_{self.startdate.replace(r'/', '')}-{self.enddate.replace(r'/', '')}"
+
+        # pandas 要匯出多 sheets excel 要先創建一個 ExcelWriter 物件，然後在這樣寫進去
+        with pd.ExcelWriter(f'{filename}.xlsx') as writer:
+            for course_name in self.st_leave_data.keys():
+                # 因為 course_name 太長了，所以想要變短一些，又發現該名稱包含中文與英文翻譯，打算把英文翻譯去掉達到變短的效果
+                course_translation = re.search(r'[a-zA-Z\s-]{2,}', course_name).group()
+                course_name_short = course_name.replace(course_translation, '')
+                # 把指定課程資料存在縮短過的 course_name sheet
+                self.st_leave_data[course_name].to_excel(writer,
+                                                         sheet_name=course_name_short,
+                                                         index=False)
 
     def scrapping(self):
         """
@@ -267,5 +288,6 @@ class LoginError(Exception):
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
     df = s.scrapping()
+    s.export2excel()
 
     pass
