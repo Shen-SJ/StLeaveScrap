@@ -1,6 +1,7 @@
 # 忽略資料夾
-chromedriver
-.idea
+__pycache__/
+chromedriver/
+.idea/
 
 # 忽略一些不想上傳的檔案
 *.csv
@@ -9,3 +10,7 @@ chromedriver
 *.txt
 *.html
 list_data
+
+# pyinstaller 產生的檔案
+build/
+*.spec
