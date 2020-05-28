@@ -11,10 +11,23 @@ import time
 import dateutil.parser as prs
 import copy
 import re
+import getpass
+
+# 做個程式開頭好了，不然直接輸入帳密有點詭異...
+print(r"+====================================================================+")
+print(r"           ********** 學生請假紀錄抓取程式 V2.1.1 **********             ")
+print(r"   本程式可以在輸入帳號密碼並確認資訊無誤後,登入學生請假系統,                ")
+print(r"   自動抓取教師所有課程於特定搜尋時間內之學生請假紀錄,並在目                 ")
+print(r"   前程式所在資料夾匯出成Excel檔案,匯出檔名為:                             ")
+print(r"   StudentsLeaveRecord_<起始日期>-<結束日期>.xlsx                       ")
+print(r"+--------------------------------------------------------------------+")
+print(r"   Author   :SSJ                                                      ")
+print(r"   Email    :johnson840205@gmail.com                                  ")
+print(r"+====================================================================+")
 
 # 登入用帳密
 username = input("請輸入賬號：")
-password = input("請輸入密碼：")
+password = getpass.getpass("請輸入密碼：")
 
 # 輸入查詢日期
 startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
