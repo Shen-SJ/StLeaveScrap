@@ -15,23 +15,30 @@ import getpass
 
 # 做個程式開頭好了，不然直接輸入帳密有點詭異...
 print(r"+====================================================================+")
-print(r"           ********** 學生請假紀錄抓取程式 V2.1.2 **********             ")
+print(r"           ********** 學生請假紀錄抓取程式 V2.2 **********               ")
 print(r"   本程式可以在輸入帳號密碼並確認資訊無誤後,登入學生請假系統,                ")
-print(r"   自動抓取教師所有課程於特定搜尋時間內之學生請假紀錄,並在目                 ")
-print(r"   前程式所在資料夾匯出成Excel檔案,匯出檔名為:                             ")
+print(r"   自動抓取教師所有課程於特定搜尋時間內之學生請假紀錄,並會自動                ")
+print(r"   判別'簽核中'學生是否已拿到該課程教師請假核准. 最後將資料於                ")
+print(r"   目前程式所在資料夾匯出成Excel檔案,匯出檔名為:                           ")
 print(r"   StudentsLeaveRecord_<起始日期>-<結束日期>.xlsx                       ")
 print(r"+--------------------------------------------------------------------+")
 print(r"   Author   :SSJ                                                      ")
 print(r"   Email    :johnson840205@gmail.com                                  ")
 print(r"+====================================================================+")
+print()
 
 # 登入用帳密
 username = input("請輸入賬號：")
 password = getpass.getpass("請輸入密碼：")
 
 # 輸入查詢日期
-startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
-enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
+while True:
+    startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
+    enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
+    if pd.Timestamp(startdate) > pd.Timestamp(enddate):
+        print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
+    else:
+        break
 
 
 class StLeaveScrap:
@@ -177,6 +184,61 @@ class StLeaveScrap:
         for ele in hide_pa:  # 隱藏的那十個參數
             self.search_post_data[ele.attrib['name']] = ele.attrib['value']
 
+    def check_approval(self, dataframe, course_id):
+        """
+        檢查 dataframe 中的各簽核狀態，如為'簽核中'，進到該學生 search_detail_url 確認老師簽核狀態
+
+        :param dataframe: pandas dataframe
+        :return: None. 因為很可怕的是，裡面對傳進來的 dataframe 修改居然也會影響到外面的 dataframe. 先把他當 feature 吧
+        """
+        # 先看看有沒有 '簽核中' 的資料需要進一步確認的，沒有就回傳原來的 dataframe
+        if dataframe[dataframe['狀態'] == "簽核中"].empty:
+            return dataframe
+
+        # 取得 detailButton 中的 ctl 數字
+        ctl_num_list = dataframe[dataframe['狀態'] == "簽核中"].index + 2
+
+        # 取得人員名子名單，確認'詳細'頁面資料正確用
+        check_name_list = dataframe[dataframe['狀態'] == "簽核中"]['姓名']
+
+        # 取得正規化後的 ctl 數字, 兩位整數，不足則在左側補 0
+        ctl_num_list = ['%.2d' % item for item in ctl_num_list]
+
+        # 開始輸入 post form
+        self.change_aspnet_arg()
+        self.change_hidden_field_pa()
+        # 開始個別查詢
+        for clt_num in ctl_num_list:
+            self.search_post_data[f'ctl00$ContentPlaceHolder1$GVallLeave$ctl{clt_num}$detailButton'] = "詳細"
+
+            # 更改 search_headers
+            self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+
+            result = self.rs.post(self.search_url,
+                                  headers=self.search_headers,
+                                  data=self.search_post_data)
+            result_etree = etree.HTML(result.text)
+
+            # 先確認學生名子跟查詢網頁是對的
+            if not check_name_list[int(clt_num)-2] in result.text:
+                raise DataNotMatchPersonNameError('學生名子與網頁不對應!! 請聯絡開發者!!')
+
+            # 抓取該學生的請假簽核名單
+            approval_sheet = pd.read_html(result.text)[3]
+
+            # 確認該課程簽核狀況，並視情況修改資料
+            if approval_sheet[approval_sheet['課程編號'] == course_id].empty:         # 如果沒看到該課程的簽核，就是還沒簽核
+                return dataframe
+            elif len(approval_sheet[approval_sheet['課程編號'] == course_id]) != 1:   # 如果該課程抓到多次簽核，那應該是我有問題
+                raise CourseCountErrorinApprovalList('課程名單辨識有問題!! 請聯絡開發者!!')
+            elif '核准' in approval_sheet[approval_sheet['課程編號'] == course_id]['簽核'].values:
+                dataframe['狀態'][int(clt_num) - 2] = '確認核准'      # 這裡最可怕， 修改在這麼裡面的 dataframe 居然也會使外面的一起更動
+
+            # 查詢完要把這 post form 刪除
+            del self.search_post_data[f'ctl00$ContentPlaceHolder1$GVallLeave$ctl{clt_num}$detailButton']
+
+        return
+
     def get_course_data(self, course_id):
         """
         取得指定課程的學生請假紀錄
@@ -205,12 +267,16 @@ class StLeaveScrap:
         self.search_web_etree = etree.HTML(self.search_web.text)
 
         # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
-        if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
+        if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) == 0:
+            data = pd.DataFrame()   # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
+            return data
+        elif int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
             data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
         else:
             data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
 
-        # TODO: 進一步確認"簽核中"的狀況
+        # 進一步確認"簽核中"的狀況
+        self.check_approval(dataframe=data, course_id=course_id)
 
         # 算算這次你要抓幾頁，迴圈要跑幾次
         total_pages = len(self.search_web_etree.xpath(
@@ -239,15 +305,16 @@ class StLeaveScrap:
             self.search_web_etree = etree.HTML(self.search_web.text)
             # 萃取出所需的資料後變成 df
             datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
-            # TODO: 進一步確認"簽核中"的狀態，這邊就要抓到的網路頁面具有的隱藏參數了
+            # 進一步確認"簽核中"的狀態
+            self.check_approval(dataframe=datan, course_id=course_id)
             data = pd.concat([data, datan],
                              axis='index',
                              ignore_index=True)
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
-        # 因為我這邊的概念很像是平行查詢，每個課程的查詢都是從最初、還沒有送出 post 前的那個 QforTeacher 頁面的 cookies 開始查詢，
-        # 如下圖:
+        # 因為我這邊的概念很像是平行查詢，每個課程的查詢都是從最初、還沒有送出 post 前的那個 QforTeacher 頁面的 cookies,
+        # __VIEWSTATE, 等等 開始查詢，如下圖:
         #
         #                       * : login to SignList_teacher
         #                       |
@@ -317,10 +384,22 @@ class LoginError(Exception):
     pass
 
 
+class DataNotMatchPersonNameError(Exception):
+    """當學生請假細節頁面名子不是學生本人所報出的錯誤，應為程式本身設計問題"""
+    pass
+
+
+class CourseCountErrorinApprovalList(Exception):
+    """當學生請假細節上同一個課有兩個紀錄，表示程式抓取可能有誤或是網頁資料的例外"""
+    pass
+
+
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
     s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    df = s.scrapping()
+    dataframe = s.scrapping()
     s.export2excel()
 
+    print()
+    input('程式跑完了!! 按任意鍵結束程式...')
     pass
