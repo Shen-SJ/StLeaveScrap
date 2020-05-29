@@ -39,6 +39,7 @@ class StLeaveScrap:
     pre_url = r'https://my.ntu.edu.tw/stuLeaveManagement/login.aspx?firstpage=teacher'
     login_url = r'https://web2.cc.ntu.edu.tw/p/s/login2/p1.php'
     search_url = r'https://my.ntu.edu.tw/stuLeaveManagement/QforTeacher_teacher.aspx'
+    search_detail_url = r'https://my.ntu.edu.tw/stuLeaveManagement/LeaveDetail_teacher.aspx'
 
     # 表頭
     nor_headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:72.0) Gecko/20100101 Firefox/72.0',
@@ -163,6 +164,19 @@ class StLeaveScrap:
         self.search_post_data["__VIEWSTATEGENERATOR"] = \
             self.search_web_etree.xpath(r'//*[@id="__VIEWSTATEGENERATOR"]/@value')[0]  # 其實目前他不會變，但怕有萬一還是從頁面抓來
 
+    def change_hidden_field_pa(self):
+        """
+        添加或修改每位學生具有的 ctl00$ContentPlaceHolder1$GVallLeave$ctl[num]$HiddenField1，一個頁面大於10組
+
+        :return: None
+        """
+        hide_pa = etree.HTML(self.search_web.text).xpath(
+            r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$HiddenField1")]')  # 取得隱藏參數
+        if len(hide_pa) > 10:
+            raise Exception('不應該超過10個!!')
+        for ele in hide_pa:  # 隱藏的那十個參數
+            self.search_post_data[ele.attrib['name']] = ele.attrib['value']
+
     def get_course_data(self, course_id):
         """
         取得指定課程的學生請假紀錄
@@ -180,6 +194,9 @@ class StLeaveScrap:
         # 更改 search_headers
         self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
 
+        # 把 search_post_data 備份，之後的變更不想應用到類別屬性，才能確保都是在 QforTeacher 的 root_web 搜尋不同課程
+        search_post_data_copy = copy.copy(self.search_post_data)
+
         # 取得第一頁並抓取資料
         time.sleep(1)  # 怕抓太快對伺服器造成負擔
         self.search_web = self.rs.post(self.search_url,
@@ -189,28 +206,22 @@ class StLeaveScrap:
 
         # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
         if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
-            df = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
+            data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
         else:
-            df = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+            data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+
+        # TODO: 進一步確認"簽核中"的狀況
 
         # 算算這次你要抓幾頁，迴圈要跑幾次
         total_pages = len(self.search_web_etree.xpath(
             '//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option'))
-
-        # 把 search_post_data 備份，之後的變更不想應用到類別屬性
-        search_post_data_copy = copy.copy(self.search_post_data)
 
         ## 取得第二頁之後的資料吧
         for _ in range(0, total_pages - 1):
             # 更改 search_post_data
             self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
             self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
-            hide_pa = etree.HTML(self.search_web.text).xpath(
-                r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$HiddenField1")]')  # 取得隱藏參數
-            if len(hide_pa) > 10:
-                raise Exception('不應該超過10個!!')
-            for ele in hide_pa:  # 隱藏的那十個參數
-                self.search_post_data[ele.attrib['name']] = ele.attrib['value']
+            self.change_hidden_field_pa()   # 更改或添加 HiddenField 參數(每個人都有一個，不超過10個)
             self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
                 etree.HTML(self.search_web.text).xpath(
                     r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
@@ -227,9 +238,11 @@ class StLeaveScrap:
                                            data=self.search_post_data)
             self.search_web_etree = etree.HTML(self.search_web.text)
             # 萃取出所需的資料後變成 df
-            df = pd.concat([df, pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]],
-                           axis='index',
-                           ignore_index=True)
+            datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+            # TODO: 進一步確認"簽核中"的狀態，這邊就要抓到的網路頁面具有的隱藏參數了
+            data = pd.concat([data, datan],
+                             axis='index',
+                             ignore_index=True)
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
@@ -246,7 +259,7 @@ class StLeaveScrap:
         #  get the results : *     * : get the results
         #
 
-        return df
+        return data
 
     def export2excel(self):
         """
