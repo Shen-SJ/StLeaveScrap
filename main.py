@@ -216,7 +216,13 @@ class StLeaveScrap:
                 raise DataNotMatchPersonNameError('學生名子與網頁不對應!! 請聯絡開發者!!')
 
             # 抓取該學生的請假簽核名單
-            approval_sheet = pd.read_html(result.text)[3]
+            approval_sheet = None
+            web_tables = pd.read_html(result.text)
+            for t in web_tables:
+                if "課程編號" in t.columns:
+                    approval_sheet = t
+            if approval_sheet is None:
+                raise ApprovalSheetCatchError("抓不到學生請假簽核名單!! 請聯絡開發者!!")
 
             # 確認該課程簽核狀況，並視情況修改資料
             if approval_sheet[approval_sheet['課程編號'] == course_id].empty:         # 如果沒看到該課程的簽核，就是還沒簽核
@@ -383,6 +389,11 @@ class DataNotMatchPersonNameError(Exception):
 
 class CourseCountErrorinApprovalList(Exception):
     """當學生請假細節上同一個課有兩個紀錄，表示程式抓取可能有誤或是網頁資料的例外"""
+    pass
+
+
+class ApprovalSheetCatchError(Exception):
+    """如果沒抓到學生的 approval sheet 所爆出的錯誤"""
     pass
 
 
