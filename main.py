@@ -12,10 +12,17 @@ import dateutil.parser as prs
 import copy
 import re
 import getpass
+from tqdm import tqdm, trange
+import math
+
+# 關閉 InsecureRequestWarning 用的，怕很嚇人
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
+warnings.simplefilter('ignore', InsecureRequestWarning)
 
 # 做個程式開頭好了，不然直接輸入帳密有點詭異...
 print(r"+====================================================================+")
-print(r"           ********** 學生請假紀錄抓取程式 V2.2 **********               ")
+print(r"           ********** 學生請假紀錄抓取程式 V2.3 **********               ")
 print(r"   本程式可以在輸入帳號密碼並確認資訊無誤後,登入學生請假系統,                ")
 print(r"   自動抓取教師所有課程於特定搜尋時間內之學生請假紀錄,並會自動                ")
 print(r"   判別'簽核中'學生是否已拿到該課程教師請假核准. 最後將資料於                ")
@@ -26,19 +33,6 @@ print(r"   Author   :SSJ                                                      ")
 print(r"   Email    :johnson840205@gmail.com                                  ")
 print(r"+====================================================================+")
 print()
-
-# 登入用帳密
-username = input("請輸入賬號：")
-password = getpass.getpass("請輸入密碼：")
-
-# 輸入查詢日期
-while True:
-    startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
-    enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
-    if pd.Timestamp(startdate) > pd.Timestamp(enddate):
-        print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
-    else:
-        break
 
 
 class StLeaveScrap:
@@ -224,7 +218,13 @@ class StLeaveScrap:
                 raise DataNotMatchPersonNameError('學生名子與網頁不對應!! 請聯絡開發者!!')
 
             # 抓取該學生的請假簽核名單
-            approval_sheet = pd.read_html(result.text)[3]
+            approval_sheet = None
+            web_tables = pd.read_html(result.text)
+            for t in web_tables:
+                if "課程編號" in t.columns:
+                    approval_sheet = t
+            if approval_sheet is None:
+                raise ApprovalSheetCatchError("抓不到學生請假簽核名單!! 請聯絡開發者!!")
 
             # 確認該課程簽核狀況，並視情況修改資料
             if approval_sheet[approval_sheet['課程編號'] == course_id].empty:         # 如果沒看到該課程的簽核，就是還沒簽核
@@ -266,50 +266,55 @@ class StLeaveScrap:
                                        data=self.search_post_data)
         self.search_web_etree = etree.HTML(self.search_web.text)
 
-        # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
-        if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) == 0:
-            data = pd.DataFrame()   # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
-            return data
-        elif int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
-            data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
-        else:
-            data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
-
-        # 進一步確認"簽核中"的狀況
-        self.check_approval(dataframe=data, course_id=course_id)
-
         # 算算這次你要抓幾頁，迴圈要跑幾次
-        total_pages = len(self.search_web_etree.xpath(
-            '//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option'))
+        total_pages = math.ceil(
+            int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) / 10)
 
-        ## 取得第二頁之後的資料吧
-        for _ in range(0, total_pages - 1):
-            # 更改 search_post_data
-            self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
-            self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
-            self.change_hidden_field_pa()   # 更改或添加 HiddenField 參數(每個人都有一個，不超過10個)
-            self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
-                etree.HTML(self.search_web.text).xpath(
-                    r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
-            if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
-                del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
+        data = None
 
-            # 更改 search_headers
-            self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+        # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
+        if total_pages == 0:
+            data = pd.DataFrame()
+            return data
 
-            # 得到第下筆資料
-            time.sleep(1)  # 怕抓太快對伺服器造成負擔
-            self.search_web = self.rs.post(self.search_url,
-                                           headers=self.search_headers,
-                                           data=self.search_post_data)
-            self.search_web_etree = etree.HTML(self.search_web.text)
-            # 萃取出所需的資料後變成 df
-            datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
-            # 進一步確認"簽核中"的狀態
-            self.check_approval(dataframe=datan, course_id=course_id)
-            data = pd.concat([data, datan],
-                             axis='index',
-                             ignore_index=True)
+        ## 抓資料吧
+        for page_index in trange(total_pages, ascii=True, desc=f"{course_id}課程抓取進度"):
+            # 第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
+            if page_index == 0:     # 第一頁的資料怎麼抓
+                if total_pages == 1:
+                    data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
+                else:
+                    data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+
+                # 進一步確認"簽核中"的狀況
+                self.check_approval(dataframe=data, course_id=course_id)
+            else:                   # 之後的頁面資料怎麼抓
+                # 更改 search_post_data
+                self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
+                self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
+                self.change_hidden_field_pa()   # 更改或添加 HiddenField 參數(每個人都有一個，不超過10個)
+                self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
+                    etree.HTML(self.search_web.text).xpath(
+                        r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
+                if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
+                    del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
+
+                # 更改 search_headers
+                self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+
+                # 得到第下筆資料
+                time.sleep(1)  # 怕抓太快對伺服器造成負擔
+                self.search_web = self.rs.post(self.search_url,
+                                               headers=self.search_headers,
+                                               data=self.search_post_data)
+                self.search_web_etree = etree.HTML(self.search_web.text)
+                # 萃取出所需的資料後變成 df
+                datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+                # 進一步確認"簽核中"的狀態
+                self.check_approval(dataframe=datan, course_id=course_id)
+                data = pd.concat([data, datan],
+                                 axis='index',
+                                 ignore_index=True)
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
@@ -373,7 +378,7 @@ class StLeaveScrap:
 
         # 開始抓吧!!
         self.st_leave_data = {}
-        for course_id in self.courses_dict.keys():
+        for course_id in tqdm(self.courses_dict.keys(), ascii=True, desc="所有課程抓取進度"):
             self.st_leave_data[self.courses_dict[course_id]] = self.get_course_data(course_id)
 
         return self.st_leave_data
@@ -394,12 +399,54 @@ class CourseCountErrorinApprovalList(Exception):
     pass
 
 
+class ApprovalSheetCatchError(Exception):
+    """如果沒抓到學生的 approval sheet 所爆出的錯誤"""
+    pass
+
+
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
-    s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    dataframe = s.scrapping()
-    s.export2excel()
+    # 在這邊用 try 可以抓取從此行開始所產生的錯誤，但 import 階段的錯誤沒辦法抓取，
+    # 不過都包裝成 exe 檔了，應該 import 不太有問題吧...
+    try:
+        # 登入用帳密
+        username = input("請輸入賬號：")
+        password = getpass.getpass("請輸入密碼：")
 
-    print()
-    input('程式跑完了!! 按任意鍵結束程式...')
-    pass
+        # 輸入查詢日期
+        while True:
+            startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+            enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+            if pd.Timestamp(startdate) > pd.Timestamp(enddate):
+                print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
+            else:
+                break
+
+        s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
+        dataframe = s.scrapping()
+        s.export2excel()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        print()
+        input('程式跑完了!! 按任意鍵結束程式...')
+        pass
+
+    ## 測試用程式碼,不然有錯誤無法在 IDE 中使用方便的功能,複製程式碼好像有點智障@@
+    # # 登入用帳密
+    # username = input("請輸入賬號：")
+    # password = getpass.getpass("請輸入密碼：")
+    #
+    # # 輸入查詢日期
+    # while True:
+    #     startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+    #     enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+    #     if pd.Timestamp(startdate) > pd.Timestamp(enddate):
+    #         print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
+    #     else:
+    #         break
+    #
+    # s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
+    # dataframe = s.scrapping()
+    # s.export2excel()

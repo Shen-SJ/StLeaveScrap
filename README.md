@@ -25,7 +25,6 @@ Just give what program want show on the screen. The program only needs 4 informa
 4. End date for searching
 
 ## Future work
-* Try to stop the program when error occur in order to see the error message.
 * Develop the GUI.
 * Maybe code the Excel VBA to automatic modified TA's student attendance by 
   the data from the program.
