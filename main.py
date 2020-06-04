@@ -13,6 +13,7 @@ import copy
 import re
 import getpass
 from tqdm import tqdm
+import math
 
 # 關閉 InsecureRequestWarning 用的，怕很嚇人
 import warnings
@@ -265,50 +266,54 @@ class StLeaveScrap:
                                        data=self.search_post_data)
         self.search_web_etree = etree.HTML(self.search_web.text)
 
+        # 算算這次你要抓幾頁，迴圈要跑幾次
+        total_pages = math.ceil(
+            int(
+                self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) / 10)
+
+        data = None
         # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
-        if int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) == 0:
+        if total_pages == 0:
             data = pd.DataFrame()   # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
             return data
-        elif int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) <= 10:
-            data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
-        else:
-            data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
-
-        # 進一步確認"簽核中"的狀況
-        self.check_approval(dataframe=data, course_id=course_id)
-
-        # 算算這次你要抓幾頁，迴圈要跑幾次
-        total_pages = len(self.search_web_etree.xpath(
-            '//*[@name="ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList"]//option'))
 
         ## 取得第二頁之後的資料吧
-        for _ in range(0, total_pages - 1):
-            # 更改 search_post_data
-            self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
-            self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
-            self.change_hidden_field_pa()   # 更改或添加 HiddenField 參數(每個人都有一個，不超過10個)
-            self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
-                etree.HTML(self.search_web.text).xpath(
-                    r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
-            if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
-                del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
+        for page_index in range(0, total_pages):
+            if page_index == 0:     # 第一頁的資料怎麼抓
+                if total_pages == 1:
+                    data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
+                else:
+                    data = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
 
-            # 更改 search_headers
-            self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+                # 進一步確認"簽核中"的狀況
+                self.check_approval(dataframe=data, course_id=course_id)
+            else:                   # 之後的頁面資料怎麼抓
+                # 更改 search_post_data
+                self.change_aspnet_arg()  # 更改 asp.net 三個必要參數
+                self.search_post_data["__EVENTTARGET"] = "ctl00$ContentPlaceHolder1$GVallLeave$ctl13$lbtnNext"  # 我按"下一頁"所需要送出的參數
+                self.change_hidden_field_pa()   # 更改或添加 HiddenField 參數(每個人都有一個，不超過10個)
+                self.search_post_data['ctl00$ContentPlaceHolder1$GVallLeave$ctl13$PageDropDownList'] = \
+                    etree.HTML(self.search_web.text).xpath(
+                        r'//*[contains(@name, "ctl00$ContentPlaceHolder1$GVallLeave$ctl") and contains(@name, "$PageDropDownList")]//option[@selected="selected"]/@value')[0]  # 選中的頁面，通常最後一頁不會跑到這，那 ctl13 應該就沒問題吧
+                if 'ctl00$ContentPlaceHolder1$Button1' in self.search_post_data.keys():
+                    del self.search_post_data['ctl00$ContentPlaceHolder1$Button1']  # 第一筆資料要按"查詢"才取得，但第二筆開始不用，所以要刪掉
 
-            # 得到第下筆資料
-            time.sleep(1)  # 怕抓太快對伺服器造成負擔
-            self.search_web = self.rs.post(self.search_url,
-                                           headers=self.search_headers,
-                                           data=self.search_post_data)
-            self.search_web_etree = etree.HTML(self.search_web.text)
-            # 萃取出所需的資料後變成 df
-            datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
-            # 進一步確認"簽核中"的狀態
-            self.check_approval(dataframe=datan, course_id=course_id)
-            data = pd.concat([data, datan],
-                             axis='index',
-                             ignore_index=True)
+                # 更改 search_headers
+                self.search_headers['Content-Length'] = str(len(parse.urlencode(self.search_post_data)))
+
+                # 得到第下筆資料
+                time.sleep(1)  # 怕抓太快對伺服器造成負擔
+                self.search_web = self.rs.post(self.search_url,
+                                               headers=self.search_headers,
+                                               data=self.search_post_data)
+                self.search_web_etree = etree.HTML(self.search_web.text)
+                # 萃取出所需的資料後變成 df
+                datan = pd.read_html(self.search_web.text)[-1].iloc[0:-1, 1:12]
+                # 進一步確認"簽核中"的狀態
+                self.check_approval(dataframe=datan, course_id=course_id)
+                data = pd.concat([data, datan],
+                                 axis='index',
+                                 ignore_index=True)
 
         # 還原 search_post_data
         self.search_post_data = search_post_data_copy
