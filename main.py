@@ -12,7 +12,7 @@ import dateutil.parser as prs
 import copy
 import re
 import getpass
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import math
 
 # 關閉 InsecureRequestWarning 用的，怕很嚇人
@@ -22,7 +22,7 @@ warnings.simplefilter('ignore', InsecureRequestWarning)
 
 # 做個程式開頭好了，不然直接輸入帳密有點詭異...
 print(r"+====================================================================+")
-print(r"           ********** 學生請假紀錄抓取程式 V2.2 **********               ")
+print(r"           ********** 學生請假紀錄抓取程式 V2.3 **********               ")
 print(r"   本程式可以在輸入帳號密碼並確認資訊無誤後,登入學生請假系統,                ")
 print(r"   自動抓取教師所有課程於特定搜尋時間內之學生請假紀錄,並會自動                ")
 print(r"   判別'簽核中'學生是否已拿到該課程教師請假核准. 最後將資料於                ")
@@ -268,17 +268,18 @@ class StLeaveScrap:
 
         # 算算這次你要抓幾頁，迴圈要跑幾次
         total_pages = math.ceil(
-            int(
-                self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) / 10)
+            int(self.search_web_etree.xpath(r'//*[@id="ctl00_ContentPlaceHolder1_recordCountLabel"]')[0].text) / 10)
 
         data = None
-        # 因為第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
+
+        # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
         if total_pages == 0:
-            data = pd.DataFrame()   # 沒有資料就弄一個空 dataframe 吧，然後就直接回傳了，不用浪費下面的資源
+            data = pd.DataFrame()
             return data
 
-        ## 取得第二頁之後的資料吧
-        for page_index in range(0, total_pages):
+        ## 抓資料吧
+        for page_index in trange(total_pages, ascii=True, desc=f"{course_id}課程抓取進度"):
+            # 第一頁如果<=10，就不會有頁數選單-->df擷取的位置不能少，本來 ".iloc[0:-1" 是因為最後一row為表單所以要刪除
             if page_index == 0:     # 第一頁的資料怎麼抓
                 if total_pages == 1:
                     data = pd.read_html(self.search_web.text)[-1].iloc[0:, 1:12]
@@ -377,7 +378,7 @@ class StLeaveScrap:
 
         # 開始抓吧!!
         self.st_leave_data = {}
-        for course_id in tqdm(self.courses_dict.keys(), desc="所有課程抓取進度"):
+        for course_id in tqdm(self.courses_dict.keys(), ascii=True, desc="所有課程抓取進度"):
             self.st_leave_data[self.courses_dict[course_id]] = self.get_course_data(course_id)
 
         return self.st_leave_data

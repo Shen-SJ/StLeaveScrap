@@ -25,7 +25,6 @@ Just give what program want show on the screen. The program only needs 4 informa
 4. End date for searching
 
 ## Future work
-* Add the progressbar.
 * Develop the GUI.
 * Maybe code the Excel VBA to automatic modified TA's student attendance by 
   the data from the program.
