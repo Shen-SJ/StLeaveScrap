@@ -12,6 +12,7 @@ import dateutil.parser as prs
 import copy
 import re
 import getpass
+from tqdm import tqdm
 
 # 關閉 InsecureRequestWarning 用的，怕很嚇人
 import warnings
@@ -371,7 +372,7 @@ class StLeaveScrap:
 
         # 開始抓吧!!
         self.st_leave_data = {}
-        for course_id in self.courses_dict.keys():
+        for course_id in tqdm(self.courses_dict.keys(), desc="所有課程抓取進度"):
             self.st_leave_data[self.courses_dict[course_id]] = self.get_course_data(course_id)
 
         return self.st_leave_data
@@ -425,3 +426,21 @@ if __name__ == "__main__":
         print()
         input('程式跑完了!! 按任意鍵結束程式...')
         pass
+
+    ## 測試用程式碼,不然有錯誤無法在 IDE 中使用方便的功能,複製程式碼好像有點智障@@
+    # # 登入用帳密
+    # username = input("請輸入賬號：")
+    # password = getpass.getpass("請輸入密碼：")
+    #
+    # # 輸入查詢日期
+    # while True:
+    #     startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+    #     enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+    #     if pd.Timestamp(startdate) > pd.Timestamp(enddate):
+    #         print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
+    #     else:
+    #         break
+    #
+    # s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
+    # dataframe = s.scrapping()
+    # s.export2excel()
