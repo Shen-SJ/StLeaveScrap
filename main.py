@@ -13,6 +13,11 @@ import copy
 import re
 import getpass
 
+# 關閉 InsecureRequestWarning 用的，怕很嚇人
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
+warnings.simplefilter('ignore', InsecureRequestWarning)
+
 # 做個程式開頭好了，不然直接輸入帳密有點詭異...
 print(r"+====================================================================+")
 print(r"           ********** 學生請假紀錄抓取程式 V2.2 **********               ")
@@ -26,19 +31,6 @@ print(r"   Author   :SSJ                                                      ")
 print(r"   Email    :johnson840205@gmail.com                                  ")
 print(r"+====================================================================+")
 print()
-
-# 登入用帳密
-username = input("請輸入賬號：")
-password = getpass.getpass("請輸入密碼：")
-
-# 輸入查詢日期
-while True:
-    startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')     # 網頁伺服器只接受 YYY/MM/DD
-    enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')       # 網頁伺服器只接受 YYY/MM/DD
-    if pd.Timestamp(startdate) > pd.Timestamp(enddate):
-        print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
-    else:
-        break
 
 
 class StLeaveScrap:
@@ -396,10 +388,29 @@ class CourseCountErrorinApprovalList(Exception):
 
 # 開始瀏覽網頁囉
 if __name__ == "__main__":
-    s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
-    dataframe = s.scrapping()
-    s.export2excel()
+    # 在這邊用 try 可以抓取從此行開始所產生的錯誤，但 import 階段的錯誤沒辦法抓取，
+    # 不過都包裝成 exe 檔了，應該 import 不太有問題吧...
+    try:
+        # 登入用帳密
+        username = input("請輸入賬號：")
+        password = getpass.getpass("請輸入密碼：")
 
-    print()
-    input('程式跑完了!! 按任意鍵結束程式...')
-    pass
+        # 輸入查詢日期
+        while True:
+            startdate = prs.parse(input('請輸入查詢起始日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+            enddate = prs.parse(input('請輸入查詢結束日期:')).strftime('%Y/%m/%d')  # 網頁伺服器只接受 YYY/MM/DD
+            if pd.Timestamp(startdate) > pd.Timestamp(enddate):
+                print('起始日期必須小於等於結束日期!!! 請重新輸入!!')
+            else:
+                break
+
+        s = StLeaveScrap(username, password, startdate=startdate, enddate=enddate)
+        dataframe = s.scrapping()
+        s.export2excel()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+    finally:
+        print()
+        input('程式跑完了!! 按任意鍵結束程式...')
+        pass
