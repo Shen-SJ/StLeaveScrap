@@ -26,7 +26,7 @@ Just give what program want show on the screen. The program only needs 4 informa
 
 ## Future work
 * Develop the GUI.
-* Maybe code the Excel VBA to automatic modified TA's student attendance by 
+* Code the Excel VBA to automatic modified TA's student attendance by 
   the data from the program.
 
 ## License
